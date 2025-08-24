@@ -1,7 +1,10 @@
 FROM php:8.2-fpm
 
-# Instala solo las dependencias necesarias del sistema
+# Instala dependencias del sistema
 RUN apt-get update && apt-get install -y \
+    curl \
+    unzip \
+    git \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
     libpng-dev \
@@ -10,14 +13,15 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     libldap2-dev \
     libicu-dev \
-    unzip \
-    git \
-    curl \
-    libcurl4-openssl-dev \
     zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libcurl4-openssl-dev \
+    supervisor \
+    autoconf \
+    make \
+    gcc \
+    pkg-config
 
-# Instala extensiones PHP requeridas por GLPI
+# Instala extensiones PHP
 RUN docker-php-ext-install \
     pdo_mysql \
     mysqli \
@@ -30,29 +34,35 @@ RUN docker-php-ext-install \
     opcache \
     intl
 
-# Instala la extensión Redis desde código fuente
+# Instala Redis desde fuente
 RUN git clone https://github.com/phpredis/phpredis.git /usr/src/php/ext/redis && \
     docker-php-ext-install redis
 
-# Copia el archivo de configuración PHP
+# Copia configuración PHP
 COPY php/php.ini /usr/local/etc/php/
 
-# Define la versión de GLPI a instalar
+# Copia Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# Define versión de GLPI
 ENV GLPI_VERSION=10.0.19
 
-# Descarga y descomprime GLPI desde el release oficial
-RUN curl -sSL https://github.com/glpi-project/glpi/releases/download/${GLPI_VERSION}/glpi-${GLPI_VERSION}.tgz -o /tmp/glpi.tgz && \
-    mkdir -p /var/www/html && \
-    tar -xzf /tmp/glpi.tgz -C /var/www/html --strip-components=1 && \
-    rm -rf /tmp/glpi.tgz
+# Descarga y descomprime GLPI
+RUN mkdir -p /var/www/glpi && \
+    curl -sSL https://github.com/glpi-project/glpi/releases/download/${GLPI_VERSION}/glpi-${GLPI_VERSION}.tgz | \
+    tar xz -C /var/www/glpi --strip-components=1
 
-# Asigna permisos a www-data
-RUN chown -R www-data:www-data /var/www/html
+# 🔗 Enlaces simbólicos necesarios para acceso desde public/
+RUN ln -s /var/www/glpi/front /var/www/glpi/public/front && \
+    ln -s /var/www/glpi/ajax  /var/www/glpi/public/ajax
 
-# Copia el entrypoint del contenedor
+# Establece permisos
+RUN chown -R www-data:www-data /var/www/glpi
+
+# Copia script de inicio
 COPY php/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Define el directorio de trabajo y el entrypoint
-WORKDIR /var/www/html
+WORKDIR /var/www/glpi
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
